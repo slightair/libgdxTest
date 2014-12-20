@@ -22,7 +22,9 @@ public class LibgdxTest extends ApplicationAdapter {
 
     public ModelBatch modelBatch;
     public Model model;
+    public Model ground;
     public ModelInstance modelInstance;
+    public ModelInstance groundInstance;
 
     @Override
     public void create() {
@@ -43,6 +45,12 @@ public class LibgdxTest extends ApplicationAdapter {
         model = loader.loadModel(Gdx.files.internal("models/mushroom.obj"));
         modelInstance = new ModelInstance(model);
 
+        ModelBuilder modelBuilder = new ModelBuilder();
+        ground = modelBuilder.createBox(100f, 1f, 100f,
+                new Material(ColorAttribute.createDiffuse(Color.GREEN)),
+                Usage.Position | Usage.Normal);
+        groundInstance = new ModelInstance(ground);
+
         cameraInputController = new CameraInputController(camera);
         Gdx.input.setInputProcessor(cameraInputController);
     }
@@ -55,6 +63,7 @@ public class LibgdxTest extends ApplicationAdapter {
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
 
         modelBatch.begin(camera);
+        modelBatch.render(groundInstance, environment);
         modelBatch.render(modelInstance, environment);
         modelBatch.end();
     }
