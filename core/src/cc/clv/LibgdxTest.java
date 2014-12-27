@@ -43,7 +43,7 @@ public class LibgdxTest extends ApplicationAdapter {
         Gdx.input.setInputProcessor(cameraInputController);
 
         assetManager = new AssetManager();
-        assetManager.load("models/mushroom.obj", Model.class);
+        assetManager.load("models/mushroom.g3db", Model.class);
         loading = true;
 
         ModelBuilder modelBuilder = new ModelBuilder();
@@ -55,7 +55,7 @@ public class LibgdxTest extends ApplicationAdapter {
     }
 
     private void doneLoading() {
-        Model mushroom = assetManager.get("models/mushroom.obj", Model.class);
+        Model mushroom = assetManager.get("models/mushroom.g3db", Model.class);
         for (int x = -2; x <= 2; x++) {
             for (int z = -2; z <= 2; z++) {
                 ModelInstance mushroomInstance = new ModelInstance(mushroom);
