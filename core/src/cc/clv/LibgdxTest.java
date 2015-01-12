@@ -9,21 +9,35 @@ import com.badlogic.gdx.graphics.PerspectiveCamera;
 import com.badlogic.gdx.graphics.VertexAttributes.Usage;
 import com.badlogic.gdx.graphics.g3d.*;
 import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute;
+import com.badlogic.gdx.graphics.g3d.environment.DirectionalLight;
+import com.badlogic.gdx.graphics.g3d.environment.DirectionalShadowLight;
 import com.badlogic.gdx.graphics.g3d.utils.CameraInputController;
+import com.badlogic.gdx.graphics.g3d.utils.DepthShaderProvider;
 import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder;
+import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.Array;
 
 public class LibgdxTest extends ApplicationAdapter {
+    public Environment environment;
+    public DirectionalShadowLight shadowLight;
     public PerspectiveCamera camera;
     public CameraInputController cameraInputController;
-    public Shader shader;
     public ModelBatch modelBatch;
+    public ModelBatch shadowBatch;
     public AssetManager assetManager;
     public Array<ModelInstance> instances = new Array<ModelInstance>();
     public boolean loading;
 
     @Override
     public void create() {
+        environment = new Environment();
+        environment.set(new ColorAttribute(ColorAttribute.AmbientLight, 0.4f, 0.4f, 0.4f, 1f));
+        DirectionalLight directionalLight = new DirectionalLight().set(0.8f, 0.8f, 0.8f, 8f, -32f, -32f);
+        environment.add(directionalLight);
+        shadowLight = new DirectionalShadowLight(1024, 1024, 1024, 1024, 1f, 500f);
+        shadowLight.set(directionalLight);
+        environment.shadowMap = shadowLight;
+
         camera = new PerspectiveCamera(67, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
         camera.position.set(50f, 50f, 50f);
         camera.lookAt(0, 0, 0);
@@ -45,10 +59,8 @@ public class LibgdxTest extends ApplicationAdapter {
         ModelInstance groundInstance = new ModelInstance(ground);
         instances.add(groundInstance);
 
-        shader = new TestShader();
-        shader.init();
-
         modelBatch = new ModelBatch();
+        shadowBatch = new ModelBatch(new DepthShaderProvider());
     }
 
     private void doneLoading() {
@@ -73,8 +85,16 @@ public class LibgdxTest extends ApplicationAdapter {
         Gdx.gl.glViewport(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
 
+        shadowLight.begin(Vector3.Zero, camera.direction);
+        shadowBatch.begin(shadowLight.getCamera());
+        shadowBatch.render(instances);
+        shadowBatch.end();
+        shadowLight.end();
+
+        Gdx.gl.glClearColor(0, 0, 0, 0);
+
         modelBatch.begin(camera);
-        modelBatch.render(instances, shader);
+        modelBatch.render(instances, environment);
         modelBatch.end();
     }
 
