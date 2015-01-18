@@ -11,6 +11,7 @@ import com.badlogic.gdx.graphics.g3d.*;
 import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute;
 import com.badlogic.gdx.graphics.g3d.environment.DirectionalLight;
 import com.badlogic.gdx.graphics.g3d.environment.DirectionalShadowLight;
+import com.badlogic.gdx.graphics.g3d.utils.AnimationController;
 import com.badlogic.gdx.graphics.g3d.utils.CameraInputController;
 import com.badlogic.gdx.graphics.g3d.utils.DepthShaderProvider;
 import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder;
@@ -26,6 +27,7 @@ public class LibgdxTest extends ApplicationAdapter {
     public ModelBatch shadowBatch;
     public AssetManager assetManager;
     public Array<ModelInstance> instances = new Array<ModelInstance>();
+    public Array<AnimationController> animationControllers = new Array<AnimationController>();
     public boolean loading;
 
     @Override
@@ -70,6 +72,10 @@ public class LibgdxTest extends ApplicationAdapter {
                 ModelInstance mushroomInstance = new ModelInstance(mushroom);
                 mushroomInstance.transform.setToTranslation(x * 20f, 0, z * 20f);
                 instances.add(mushroomInstance);
+
+                AnimationController animationController = new AnimationController(mushroomInstance);
+                animationController.setAnimation("mushroom|mushroomAction", -1);
+                animationControllers.add(animationController);
             }
         }
         loading = false;
@@ -80,18 +86,23 @@ public class LibgdxTest extends ApplicationAdapter {
         if (loading && assetManager.update()) {
             doneLoading();
         }
-        cameraInputController.update();
 
         Gdx.gl.glViewport(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+        Gdx.gl.glClearColor(0, 0, 0, 0);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
+
+        cameraInputController.update();
+
+        float deltaTime = Gdx.graphics.getDeltaTime();
+        for (AnimationController animationController: animationControllers) {
+            animationController.update(deltaTime);
+        }
 
         shadowLight.begin(Vector3.Zero, camera.direction);
         shadowBatch.begin(shadowLight.getCamera());
         shadowBatch.render(instances);
         shadowBatch.end();
         shadowLight.end();
-
-        Gdx.gl.glClearColor(0, 0, 0, 0);
 
         modelBatch.begin(camera);
         modelBatch.render(instances, environment);
@@ -102,6 +113,7 @@ public class LibgdxTest extends ApplicationAdapter {
     public void dispose() {
         modelBatch.dispose();
         instances.clear();
+        animationControllers.clear();
         assetManager.dispose();
     }
 
