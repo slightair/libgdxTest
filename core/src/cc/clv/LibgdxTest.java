@@ -18,20 +18,20 @@ import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.physics.bullet.Bullet;
-import com.badlogic.gdx.physics.bullet.collision.CollisionObjectWrapper;
+import com.badlogic.gdx.physics.bullet.collision.ContactListener;
 import com.badlogic.gdx.physics.bullet.collision.btBoxShape;
+import com.badlogic.gdx.physics.bullet.collision.btBroadphaseInterface;
 import com.badlogic.gdx.physics.bullet.collision.btCapsuleShape;
-import com.badlogic.gdx.physics.bullet.collision.btCollisionAlgorithm;
 import com.badlogic.gdx.physics.bullet.collision.btCollisionConfiguration;
 import com.badlogic.gdx.physics.bullet.collision.btCollisionDispatcher;
 import com.badlogic.gdx.physics.bullet.collision.btCollisionObject;
 import com.badlogic.gdx.physics.bullet.collision.btCollisionShape;
+import com.badlogic.gdx.physics.bullet.collision.btCollisionWorld;
 import com.badlogic.gdx.physics.bullet.collision.btConeShape;
 import com.badlogic.gdx.physics.bullet.collision.btCylinderShape;
+import com.badlogic.gdx.physics.bullet.collision.btDbvtBroadphase;
 import com.badlogic.gdx.physics.bullet.collision.btDefaultCollisionConfiguration;
 import com.badlogic.gdx.physics.bullet.collision.btDispatcher;
-import com.badlogic.gdx.physics.bullet.collision.btDispatcherInfo;
-import com.badlogic.gdx.physics.bullet.collision.btManifoldResult;
 import com.badlogic.gdx.physics.bullet.collision.btSphereShape;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.ArrayMap;
@@ -78,6 +78,17 @@ public class LibgdxTest extends ApplicationAdapter {
         }
     }
 
+    class MyContactListener extends ContactListener {
+
+        @Override
+        public boolean onContactAdded(int userValue0, int partId0, int index0, int userValue1,
+                int partId1, int index1) {
+            instances.get(userValue0).moving = false;
+            instances.get(userValue1).moving = false;
+            return true;
+        }
+    }
+
     private PerspectiveCamera camera;
     private CameraInputController cameraInputController;
     private ModelBatch modelBatch;
@@ -88,6 +99,9 @@ public class LibgdxTest extends ApplicationAdapter {
     private btCollisionConfiguration collisionConfiguration;
     private btDispatcher dispatcher;
     private float spawnTimer;
+    private MyContactListener contactListener;
+    private btBroadphaseInterface broadphaseInterface;
+    private btCollisionWorld collisionWorld;
 
     @Override
     public void create() {
@@ -150,32 +164,16 @@ public class LibgdxTest extends ApplicationAdapter {
         constructors.put("cylinder", new GameObject.Constructor(model, "cylinder",
                 new btCylinderShape(new Vector3(.5f, 1f, .5f))));
 
-        instances.add(constructors.get("ground").construct());
-
         collisionConfiguration = new btDefaultCollisionConfiguration();
         dispatcher = new btCollisionDispatcher(collisionConfiguration);
-    }
+        broadphaseInterface = new btDbvtBroadphase();
+        collisionWorld = new btCollisionWorld(dispatcher, broadphaseInterface,
+                collisionConfiguration);
+        contactListener = new MyContactListener();
 
-    boolean checkCollision(btCollisionObject obj0, btCollisionObject obj1) {
-        CollisionObjectWrapper co0 = new CollisionObjectWrapper(obj0);
-        CollisionObjectWrapper co1 = new CollisionObjectWrapper(obj1);
-
-        btCollisionAlgorithm algorithm = dispatcher.findAlgorithm(co0.wrapper, co1.wrapper);
-
-        btDispatcherInfo dispatcherInfo = new btDispatcherInfo();
-        btManifoldResult manifoldResult = new btManifoldResult(co0.wrapper, co1.wrapper);
-
-        algorithm.processCollision(co0.wrapper, co1.wrapper, dispatcherInfo, manifoldResult);
-
-        boolean r = manifoldResult.getPersistentManifold().getNumContacts() > 0;
-
-        dispatcher.freeCollisionAlgorithm(algorithm.getCPointer());
-        manifoldResult.dispose();
-        dispatcherInfo.dispose();
-        co1.dispose();
-        co0.dispose();
-
-        return r;
+        GameObject ground = constructors.get("ground").construct();
+        instances.add(ground);
+        collisionWorld.addCollisionObject(ground.body);
     }
 
     public void spawn() {
@@ -186,7 +184,11 @@ public class LibgdxTest extends ApplicationAdapter {
                 MathUtils.random(360f));
         obj.transform.trn(MathUtils.random(-2.5f, 2.5f), 9f, MathUtils.random(-2.5f, 2.5f));
         obj.body.setWorldTransform(obj.transform);
+        obj.body.setUserValue(instances.size);
+        obj.body.setCollisionFlags(obj.body.getCollisionFlags()
+                | btCollisionObject.CollisionFlags.CF_CUSTOM_MATERIAL_CALLBACK);
         instances.add(obj);
+        collisionWorld.addCollisionObject(obj.body);
     }
 
     @Override
@@ -197,11 +199,10 @@ public class LibgdxTest extends ApplicationAdapter {
             if (obj.moving) {
                 obj.transform.trn(0f, -delta * 10, 0f);
                 obj.body.setWorldTransform(obj.transform);
-                if (checkCollision(obj.body, instances.get(0).body)) {
-                    obj.moving = false;
-                }
             }
         }
+
+        collisionWorld.performDiscreteCollisionDetection();
 
         if ((spawnTimer -= delta) < 0) {
             spawn();
@@ -229,6 +230,10 @@ public class LibgdxTest extends ApplicationAdapter {
             constructor.dispose();
         }
         constructors.clear();
+
+        collisionWorld.dispose();
+        broadphaseInterface.dispose();
+        contactListener.dispose();
 
         dispatcher.dispose();
         collisionConfiguration.dispose();
