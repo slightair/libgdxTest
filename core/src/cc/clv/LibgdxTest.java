@@ -26,28 +26,36 @@ import com.badlogic.gdx.physics.bullet.collision.btCollisionConfiguration;
 import com.badlogic.gdx.physics.bullet.collision.btCollisionDispatcher;
 import com.badlogic.gdx.physics.bullet.collision.btCollisionObject;
 import com.badlogic.gdx.physics.bullet.collision.btCollisionShape;
-import com.badlogic.gdx.physics.bullet.collision.btCollisionWorld;
 import com.badlogic.gdx.physics.bullet.collision.btConeShape;
 import com.badlogic.gdx.physics.bullet.collision.btCylinderShape;
 import com.badlogic.gdx.physics.bullet.collision.btDbvtBroadphase;
 import com.badlogic.gdx.physics.bullet.collision.btDefaultCollisionConfiguration;
 import com.badlogic.gdx.physics.bullet.collision.btDispatcher;
 import com.badlogic.gdx.physics.bullet.collision.btSphereShape;
+import com.badlogic.gdx.physics.bullet.dynamics.btConstraintSolver;
+import com.badlogic.gdx.physics.bullet.dynamics.btDiscreteDynamicsWorld;
+import com.badlogic.gdx.physics.bullet.dynamics.btDynamicsWorld;
+import com.badlogic.gdx.physics.bullet.dynamics.btRigidBody;
+import com.badlogic.gdx.physics.bullet.dynamics.btSequentialImpulseConstraintSolver;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.ArrayMap;
 import com.badlogic.gdx.utils.Disposable;
 
 public class LibgdxTest extends ApplicationAdapter {
 
+    final static short GROUND_FLAG = 1 << 8;
+    final static short OBJECT_FLAG = 1 << 9;
+    final static short ALL_FLAG = -1;
+
     static class GameObject extends ModelInstance implements Disposable {
 
-        public final btCollisionObject body;
+        public final btRigidBody body;
         public boolean moving;
 
-        public GameObject(Model model, String node, btCollisionShape shape) {
+        public GameObject(Model model, String node,
+                btRigidBody.btRigidBodyConstructionInfo constructionInfo) {
             super(model, node);
-            body = new btCollisionObject();
-            body.setCollisionShape(shape);
+            body = new btRigidBody(constructionInfo);
         }
 
         @Override
@@ -60,20 +68,30 @@ public class LibgdxTest extends ApplicationAdapter {
             public final Model model;
             public final String node;
             public final btCollisionShape shape;
+            public final btRigidBody.btRigidBodyConstructionInfo constructionInfo;
+            private static Vector3 localInertia = new Vector3();
 
-            public Constructor(Model model, String node, btCollisionShape shape) {
+            public Constructor(Model model, String node, btCollisionShape shape, float mass) {
                 this.model = model;
                 this.node = node;
                 this.shape = shape;
+                if (mass > 0f) {
+                    shape.calculateLocalInertia(mass, localInertia);
+                } else {
+                    localInertia.set(0, 0, 0);
+                }
+                this.constructionInfo = new btRigidBody.btRigidBodyConstructionInfo(mass, null,
+                        shape, localInertia);
             }
 
             public GameObject construct() {
-                return new GameObject(model, node, shape);
+                return new GameObject(model, node, constructionInfo);
             }
 
             @Override
             public void dispose() {
                 shape.dispose();
+                constructionInfo.dispose();
             }
         }
     }
@@ -83,9 +101,20 @@ public class LibgdxTest extends ApplicationAdapter {
         @Override
         public boolean onContactAdded(int userValue0, int partId0, int index0, int userValue1,
                 int partId1, int index1) {
-            instances.get(userValue0).moving = false;
-            instances.get(userValue1).moving = false;
+            if (userValue0 != 0) {
+                removeColor(userValue0);
+            }
+
+            if (userValue1 != 0) {
+                removeColor(userValue1);
+            }
+
             return true;
+        }
+
+        public void removeColor(int instanceId) {
+            ((ColorAttribute) instances.get(instanceId).materials.get(0)
+                    .get(ColorAttribute.Diffuse)).color.set(Color.WHITE);
         }
     }
 
@@ -101,7 +130,8 @@ public class LibgdxTest extends ApplicationAdapter {
     private float spawnTimer;
     private MyContactListener contactListener;
     private btBroadphaseInterface broadphaseInterface;
-    private btCollisionWorld collisionWorld;
+    private btDynamicsWorld dynamicsWorld;
+    private btConstraintSolver constraintSolver;
 
     @Override
     public void create() {
@@ -152,28 +182,29 @@ public class LibgdxTest extends ApplicationAdapter {
         constructors = new ArrayMap<String, GameObject.Constructor>(String.class,
                 GameObject.Constructor.class);
         constructors.put("ground", new GameObject.Constructor(model, "ground",
-                new btBoxShape(new Vector3(2.5f, 0.5f, 2.5f))));
+                new btBoxShape(new Vector3(2.5f, 0.5f, 2.5f)), 0f));
         constructors.put("sphere",
-                new GameObject.Constructor(model, "sphere", new btSphereShape(0.5f)));
+                new GameObject.Constructor(model, "sphere", new btSphereShape(0.5f), 1f));
         constructors.put("box", new GameObject.Constructor(model, "box",
-                new btBoxShape(new Vector3(0.5f, 0.5f, 0.5f))));
-        constructors
-                .put("cone", new GameObject.Constructor(model, "cone", new btConeShape(0.5f, 2f)));
+                new btBoxShape(new Vector3(0.5f, 0.5f, 0.5f)), 1f));
+        constructors.put("cone",
+                new GameObject.Constructor(model, "cone", new btConeShape(0.5f, 2f), 1f));
         constructors.put("capsule",
-                new GameObject.Constructor(model, "capsule", new btCapsuleShape(.5f, 1f)));
+                new GameObject.Constructor(model, "capsule", new btCapsuleShape(.5f, 1f), 1f));
         constructors.put("cylinder", new GameObject.Constructor(model, "cylinder",
-                new btCylinderShape(new Vector3(.5f, 1f, .5f))));
+                new btCylinderShape(new Vector3(.5f, 1f, .5f)), 1f));
 
         collisionConfiguration = new btDefaultCollisionConfiguration();
         dispatcher = new btCollisionDispatcher(collisionConfiguration);
         broadphaseInterface = new btDbvtBroadphase();
-        collisionWorld = new btCollisionWorld(dispatcher, broadphaseInterface,
-                collisionConfiguration);
+        constraintSolver = new btSequentialImpulseConstraintSolver();
+        dynamicsWorld = new btDiscreteDynamicsWorld(dispatcher, broadphaseInterface,
+                constraintSolver, collisionConfiguration);
         contactListener = new MyContactListener();
 
         GameObject ground = constructors.get("ground").construct();
         instances.add(ground);
-        collisionWorld.addCollisionObject(ground.body);
+        dynamicsWorld.addRigidBody(ground.body, GROUND_FLAG, ALL_FLAG);
     }
 
     public void spawn() {
@@ -188,21 +219,18 @@ public class LibgdxTest extends ApplicationAdapter {
         obj.body.setCollisionFlags(obj.body.getCollisionFlags()
                 | btCollisionObject.CollisionFlags.CF_CUSTOM_MATERIAL_CALLBACK);
         instances.add(obj);
-        collisionWorld.addCollisionObject(obj.body);
+        dynamicsWorld.addRigidBody(obj.body, GROUND_FLAG, ALL_FLAG);
     }
 
     @Override
     public void render() {
         final float delta = Math.min(1f / 30f, Gdx.graphics.getDeltaTime());
 
-        for (GameObject obj : instances) {
-            if (obj.moving) {
-                obj.transform.trn(0f, -delta * 10, 0f);
-                obj.body.setWorldTransform(obj.transform);
-            }
-        }
+        dynamicsWorld.stepSimulation(delta, 5, 1f / 60f);
 
-        collisionWorld.performDiscreteCollisionDetection();
+        for (GameObject obj : instances) {
+            obj.body.getWorldTransform(obj.transform);
+        }
 
         if ((spawnTimer -= delta) < 0) {
             spawn();
@@ -231,7 +259,8 @@ public class LibgdxTest extends ApplicationAdapter {
         }
         constructors.clear();
 
-        collisionWorld.dispose();
+        dynamicsWorld.dispose();
+        constraintSolver.dispose();
         broadphaseInterface.dispose();
         contactListener.dispose();
 
